@@ -12,6 +12,7 @@ import {
   Overlay,
   OverlayCenter,
   Scroll,
+  Spinner,
   Text,
   toRem,
 } from 'folds';
@@ -28,6 +29,7 @@ import React, {
 import { isKeyHotkey } from 'is-hotkey';
 import { useAtom, useAtomValue } from 'jotai';
 import { Room } from 'matrix-js-sdk';
+import { useNavigate } from 'react-router-dom';
 import { useDirects, useOrphanSpaces, useRooms, useSpaces } from '../../state/hooks/roomList';
 import { useMatrixClient } from '../../hooks/useMatrixClient';
 import { mDirectAtom } from '../../state/mDirectList';
@@ -50,7 +52,12 @@ import { factoryRoomIdByActivity } from '../../utils/sort';
 import { nameInitials } from '../../utils/common';
 import { useRoomNavigate } from '../../hooks/useRoomNavigate';
 import { useListFocusIndex } from '../../hooks/useListFocusIndex';
-import { getMxIdLocalPart, getMxIdServer, guessDmRoomUserId } from '../../utils/matrix';
+import {
+  getDMRoomFor,
+  getMxIdLocalPart,
+  getMxIdServer,
+  guessDmRoomUserId,
+} from '../../utils/matrix';
 import { roomToParentsAtom } from '../../state/room/roomToParents';
 import { roomToUnreadAtom } from '../../state/room/roomToUnread';
 import { UnreadBadge, UnreadBadgeCenter } from '../../components/unread-badge';
@@ -59,6 +66,12 @@ import { useKeyDown } from '../../hooks/useKeyDown';
 import { useMediaAuthentication } from '../../hooks/useMediaAuthentication';
 import { KeySymbol } from '../../utils/key-symbol';
 import { isMacOS } from '../../utils/user-agent';
+import {
+  useUserDirectorySearch,
+  UserDirectorySearchResult,
+} from '../../hooks/useUserDirectorySearch';
+import { UserAvatar } from '../../components/user-avatar';
+import { getDirectCreatePath } from '../../pages/pathUtils';
 
 enum SearchRoomType {
   Rooms = '#',
@@ -136,6 +149,7 @@ type SearchProps = {
 };
 export function Search({ requestClose }: SearchProps) {
   const mx = useMatrixClient();
+  const navigate = useNavigate();
   const useAuthentication = useMediaAuthentication();
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -157,6 +171,9 @@ export function Search({ requestClose }: SearchProps) {
   const topActiveRooms = useTopActiveRooms(searchRoomType, rooms, directs, spaces);
   const targetRooms = useSearchTargetRooms(searchRoomType, rooms, directs, spaces);
 
+  const directorySearch = useUserDirectorySearch();
+  const [searchTerm, setSearchTerm] = useState('');
+
   const getTargetStr: SearchItemStrGetter<string> = useCallback(
     (roomId: string) => {
       const roomName = getRoom(roomId)?.name ?? roomId;
@@ -172,7 +189,27 @@ export function Search({ requestClose }: SearchProps) {
 
   const [result, search, resetSearch] = useAsyncSearch(targetRooms, getTargetStr, SEARCH_OPTIONS);
   const roomsToRender = result ? result.items : topActiveRooms;
-  const listFocus = useListFocusIndex(roomsToRender.length, 0);
+
+  // Collect user IDs already shown as local DM rooms to deduplicate directory results
+  const localDmUserIds = useMemo(() => {
+    const ids = new Set<string>();
+    roomsToRender.forEach((roomId) => {
+      if (mDirects.has(roomId)) {
+        const userId = getDmUserId(roomId, getRoom, mx.getSafeUserId());
+        if (userId) ids.add(userId);
+      }
+    });
+    return ids;
+  }, [roomsToRender, mDirects, getRoom, mx]);
+
+  // Only show directory results when searching with @ prefix
+  const filteredDirectoryResults = useMemo(() => {
+    if (searchRoomType !== SearchRoomType.Directs) return [];
+    return directorySearch.results.filter((u) => !localDmUserIds.has(u.user_id));
+  }, [searchRoomType, directorySearch.results, localDmUserIds]);
+
+  const totalItems = roomsToRender.length + filteredDirectoryResults.length;
+  const listFocus = useListFocusIndex(totalItems, 0);
 
   const queryHighlighRegex = result?.query
     ? makeHighlightRegex(result.query.split(' '))
@@ -181,6 +218,16 @@ export function Search({ requestClose }: SearchProps) {
   const openRoomId = (roomId: string, isSpace: boolean) => {
     if (isSpace) navigateSpace(roomId);
     else navigateRoom(roomId);
+    requestClose();
+  };
+
+  const openDirectoryUser = (user: UserDirectorySearchResult) => {
+    const existingDm = getDMRoomFor(mx, user.user_id);
+    if (existingDm) {
+      navigateRoom(existingDm.roomId);
+    } else {
+      navigate(`${getDirectCreatePath()}?userId=${encodeURIComponent(user.user_id)}`);
+    }
     requestClose();
   };
 
@@ -198,17 +245,32 @@ export function Search({ requestClose }: SearchProps) {
       setSearchRoomType(undefined);
     }
 
+    setSearchTerm(value);
+
     if (value === '') {
       resetSearch();
+      directorySearch.reset();
       return;
     }
     search(value);
+
+    // Trigger user directory search when using @ prefix
+    if (searchType === SearchRoomType.Directs && value) {
+      directorySearch.search(value);
+    } else {
+      directorySearch.reset();
+    }
   };
 
   const handleInputKeyDown: KeyboardEventHandler<HTMLInputElement> = (evt) => {
-    const roomId = roomsToRender[listFocus.index];
-    if (isKeyHotkey('enter', evt) && roomId) {
-      openRoomId(roomId, spaces.includes(roomId));
+    if (isKeyHotkey('enter', evt)) {
+      if (listFocus.index < roomsToRender.length) {
+        const roomId = roomsToRender[listFocus.index];
+        if (roomId) openRoomId(roomId, spaces.includes(roomId));
+      } else {
+        const dirUser = filteredDirectoryResults[listFocus.index - roomsToRender.length];
+        if (dirUser) openDirectoryUser(dirUser);
+      }
       return;
     }
     if (isKeyHotkey('arrowdown', evt)) {
@@ -230,6 +292,10 @@ export function Search({ requestClose }: SearchProps) {
     openRoomId(roomId, isSpace);
   };
 
+  const handleDirectoryUserClick = (user: UserDirectorySearchResult) => {
+    openDirectoryUser(user);
+  };
+
   useEffect(() => {
     const scrollView = scrollRef.current;
     const focusedItem = scrollView?.querySelector(`[data-focus-index="${listFocus.index}"]`);
@@ -240,6 +306,16 @@ export function Search({ requestClose }: SearchProps) {
       });
     }
   }, [listFocus.index]);
+
+  const showDirectorySection =
+    searchRoomType === SearchRoomType.Directs &&
+    searchTerm &&
+    (directorySearch.loading || filteredDirectoryResults.length > 0);
+
+  const noResults =
+    roomsToRender.length === 0 &&
+    filteredDirectoryResults.length === 0 &&
+    !directorySearch.loading;
 
   return (
     <Overlay open>
@@ -276,7 +352,7 @@ export function Search({ requestClose }: SearchProps) {
               />
             </Box>
             <Box grow="Yes">
-              {roomsToRender.length === 0 && (
+              {noResults && (
                 <Box
                   style={{ paddingTop: config.space.S700 }}
                   grow="Yes"
@@ -295,7 +371,7 @@ export function Search({ requestClose }: SearchProps) {
                   </Text>
                 </Box>
               )}
-              {roomsToRender.length > 0 && (
+              {(roomsToRender.length > 0 || showDirectorySection) && (
                 <Scroll ref={scrollRef} size="300" hideTrack>
                   <div style={{ padding: config.space.S400, paddingRight: config.space.S200 }}>
                     {roomsToRender.map((roomId, index) => {
@@ -402,6 +478,88 @@ export function Search({ requestClose }: SearchProps) {
                         </MenuItem>
                       );
                     })}
+
+                    {showDirectorySection && (
+                      <>
+                        <Box
+                          style={{
+                            padding: `${config.space.S200} ${config.space.S300}`,
+                            paddingTop:
+                              roomsToRender.length > 0 ? config.space.S300 : config.space.S100,
+                          }}
+                        >
+                          <Text size="L400" priority="300">
+                            User Directory
+                          </Text>
+                        </Box>
+                        {directorySearch.loading && filteredDirectoryResults.length === 0 && (
+                          <Box justifyContent="Center" style={{ padding: config.space.S200 }}>
+                            <Spinner size="200" />
+                          </Box>
+                        )}
+                        {filteredDirectoryResults.map((user, dirIndex) => {
+                          const globalIndex = roomsToRender.length + dirIndex;
+                          const avatarUrl = user.avatar_url
+                            ? mx.mxcUrlToHttp(
+                                user.avatar_url,
+                                100,
+                                100,
+                                'crop',
+                                undefined,
+                                false,
+                                useAuthentication
+                              )
+                            : undefined;
+                          const displayName =
+                            user.display_name || getMxIdLocalPart(user.user_id);
+                          const server = getMxIdServer(user.user_id);
+
+                          return (
+                            <MenuItem
+                              key={user.user_id}
+                              as="button"
+                              data-focus-index={globalIndex}
+                              onClick={() => handleDirectoryUserClick(user)}
+                              variant={
+                                listFocus.index === globalIndex ? 'Primary' : 'Surface'
+                              }
+                              aria-pressed={listFocus.index === globalIndex}
+                              radii="400"
+                              before={
+                                <Avatar size="200" radii="400">
+                                  <UserAvatar
+                                    userId={user.user_id}
+                                    src={avatarUrl ?? undefined}
+                                    alt={displayName}
+                                    renderFallback={() => (
+                                      <Text as="span" size="H6">
+                                        {nameInitials(displayName)}
+                                      </Text>
+                                    )}
+                                  />
+                                </Avatar>
+                              }
+                              after={
+                                server && (
+                                  <Text size="T200" priority="300" truncate>
+                                    <b>{server}</b>
+                                  </Text>
+                                )
+                              }
+                            >
+                              <Box grow="Yes" alignItems="Center" gap="100">
+                                <Text size="T400" truncate>
+                                  {displayName}
+                                </Text>
+                                <Text as="span" size="T200" priority="300" truncate>
+                                  {user.user_id}
+                                </Text>
+                              </Box>
+                            </MenuItem>
+                          );
+                        })}
+                      </>
+                    )}
                   </div>
                 </Scroll>
               )}
