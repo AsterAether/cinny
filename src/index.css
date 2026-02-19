@@ -41,6 +41,8 @@
 html {
   height: 100%;
   overflow: hidden;
+  /* Make HTML background transparent so Android system shows through */
+  background-color: transparent;
 }
 
 body {
@@ -53,12 +55,22 @@ body {
 
   /*Why font-variant-ligatures => https://github.com/rsms/inter/issues/222 */
   font-variant-ligatures: no-contextual;
+
+  /* Safe area insets for mobile (Android/iOS notches and navigation bars) */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  /* No left/right padding needed on modern Android phones */
+
+  /* Match the app's surface background color (from folds theme) */
+  background-color: var(--oq6d070, #F2F2F2);
 }
 #root {
   width: 100%;
   height: 100%;
   display: flex;
   flex-direction: column;
+  /* Let root set the actual background color that will show in status bar area */
+  background-color: inherit;
 }
 
 *,
