@@ -219,6 +219,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     const [hideStickerBtn, setHideStickerBtn] = useState(document.body.clientWidth < 500);
 
     const isComposing = useComposingCheck();
+    const draftLoadedRef = useRef(false);
 
     useElementSizeObserver(
       useCallback(() => document.body, []),
@@ -226,7 +227,12 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     );
 
     useEffect(() => {
-      Transforms.insertFragment(editor, msgDraft);
+      // Only insert draft on initial mount, not on every msgDraft change
+      // This prevents cursor jumping on mobile when msgDraft updates reactively
+      if (!draftLoadedRef.current) {
+        Transforms.insertFragment(editor, msgDraft);
+        draftLoadedRef.current = true;
+      }
     }, [editor, msgDraft]);
 
     useEffect(
@@ -239,6 +245,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         }
         resetEditor(editor);
         resetEditorHistory(editor);
+        draftLoadedRef.current = false; // Reset for next room
       },
       [roomId, editor, setMsgDraft]
     );
