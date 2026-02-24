@@ -146,6 +146,8 @@ function MessageNotifications() {
       roomName,
       roomAvatar,
       username,
+      roomId,
+      eventId,
     }: {
       roomName: string;
       roomAvatar?: string;
@@ -158,6 +160,10 @@ function MessageNotifications() {
         badge: roomAvatar,
         body: `New inbox notification from ${username}`,
         silent: true,
+        data: {
+          roomId,
+          eventId,
+        },
       });
 
       noti.onclick = () => {
