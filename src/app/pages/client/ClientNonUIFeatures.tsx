@@ -186,6 +186,7 @@ function MessageNotifications() {
   const useAuthentication = useMediaAuthentication();
   const [showNotifications] = useSetting(settingsAtom, 'showNotifications');
   const [notificationSound] = useSetting(settingsAtom, 'isNotificationSounds');
+  const [showNotificationContent] = useSetting(settingsAtom, 'showNotificationContent');
 
   const navigate = useNavigate();
   const notificationSelected = useInboxNotificationsSelected();
@@ -196,18 +197,29 @@ function MessageNotifications() {
       roomName,
       roomAvatar,
       username,
+      roomId,
+      eventId,
+      mEvent,
     }: {
       roomName: string;
       roomAvatar?: string;
       username: string;
       roomId: string;
       eventId: string;
+      mEvent: MatrixEvent;
     }) => {
+      const { body, largeBody } = getNotificationBody(mEvent, showNotificationContent);
+
       const noti = new window.Notification(roomName, {
         icon: roomAvatar,
         badge: roomAvatar,
-        body: `New inbox notification from ${username}`,
+        body: body,
         silent: true,
+        data: {
+          roomId,
+          eventId,
+          largeBody,
+        },
       });
 
       noti.onclick = () => {
@@ -219,7 +231,7 @@ function MessageNotifications() {
       notifRef.current?.close();
       notifRef.current = noti;
     },
-    [navigate]
+    [navigate, showNotificationContent]
   );
 
   const playSound = useCallback(() => {
@@ -273,6 +285,7 @@ function MessageNotifications() {
           username: getMemberDisplayName(room, sender) ?? getMxIdLocalPart(sender) ?? sender,
           roomId: room.roomId,
           eventId,
+          mEvent,
         });
       }
 
