@@ -1,7 +1,7 @@
 import { useAtomValue } from 'jotai';
 import React, { ReactNode, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { RoomEvent, RoomEventHandlerMap } from 'matrix-js-sdk';
+import { MatrixEvent, RoomEvent, RoomEventHandlerMap } from 'matrix-js-sdk';
 import { roomToUnreadAtom, unreadEqual, unreadInfoToUnread } from '../../state/room/roomToUnread';
 import LogoSVG from '../../../../public/res/svg/cinny.svg';
 import LogoUnreadSVG from '../../../../public/res/svg/cinny-unread.svg';
@@ -126,6 +126,56 @@ function InviteNotifications() {
       <source src={InviteSound} type="audio/ogg" />
     </audio>
   );
+}
+
+function getNotificationBody(
+  mEvent: MatrixEvent,
+  showContent: boolean
+): { body: string; largeBody: string } {
+  // If toggle is OFF, return generic text
+  if (!showContent) {
+    const sender = mEvent.getSender();
+    const username = sender ? getMxIdLocalPart(sender) ?? sender : 'Unknown';
+    const generic = `New inbox notification from ${username}`;
+    return { body: generic, largeBody: generic };
+  }
+
+  // Extract content based on message type
+  const content = mEvent.getContent();
+  const msgtype = content.msgtype;
+
+  let messageText: string;
+  switch (msgtype) {
+    case 'm.text':
+    case 'm.notice':
+    case 'm.emote':
+      messageText = content.body || 'New message';
+      break;
+    case 'm.image':
+      messageText = '📷 Image' + (content.body ? `: ${content.body}` : '');
+      break;
+    case 'm.file':
+      messageText = '📎 File' + (content.body ? `: ${content.body}` : '');
+      break;
+    case 'm.audio':
+      messageText = '🎵 Audio' + (content.body ? `: ${content.body}` : '');
+      break;
+    case 'm.video':
+      messageText = '🎥 Video' + (content.body ? `: ${content.body}` : '');
+      break;
+    default:
+      messageText = content.body || 'New message';
+  }
+
+  // Truncate for collapsed notification (150 chars)
+  const truncatedBody =
+    messageText.length > 150 ? messageText.substring(0, 147) + '...' : messageText;
+
+  // Keep more for expandable notification on Android (500 chars)
+  const largeBody =
+    messageText.length > 500 ? messageText.substring(0, 497) + '...' : messageText;
+
+  return { body: truncatedBody, largeBody };
 }
 
 function MessageNotifications() {
