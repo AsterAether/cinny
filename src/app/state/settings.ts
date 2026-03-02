@@ -36,6 +36,7 @@ export interface Settings {
 
   showNotifications: boolean;
   isNotificationSounds: boolean;
+  showNotificationContent: boolean; // NEW: Show message content in notifications
 
   hour24Clock: boolean;
   dateFormatString: string;
@@ -70,6 +71,7 @@ const defaultSettings: Settings = {
 
   showNotifications: true,
   isNotificationSounds: true,
+  showNotificationContent: false, // NEW: Privacy-first default
 
   hour24Clock: false,
   dateFormatString: 'D MMM YYYY',
