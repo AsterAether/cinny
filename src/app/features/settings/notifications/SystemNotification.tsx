@@ -91,6 +91,10 @@ export function SystemNotification() {
     settingsAtom,
     'isNotificationSounds'
   );
+  const [showNotificationContent, setShowNotificationContent] = useSetting(
+    settingsAtom,
+    'showNotificationContent'
+  );
 
   const requestNotificationPermission = () => {
     window.Notification.requestPermission();
@@ -130,6 +134,24 @@ export function SystemNotification() {
                 onChange={setShowNotifications}
               />
             )
+          }
+        />
+      </SequenceCard>
+      <SequenceCard
+        className={SequenceCardStyle}
+        variant="SurfaceVariant"
+        direction="Column"
+        gap="400"
+      >
+        <SettingTile
+          title="Show Message Content"
+          description="Display actual message text in notifications instead of generic text. Privacy notice: Message content will be visible in your notification shade."
+          after={
+            <Switch
+              disabled={!showNotifications}
+              value={showNotificationContent}
+              onChange={setShowNotificationContent}
+            />
           }
         />
       </SequenceCard>
