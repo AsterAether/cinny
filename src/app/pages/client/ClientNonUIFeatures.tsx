@@ -2,6 +2,7 @@ import { useAtomValue } from 'jotai';
 import React, { ReactNode, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MatrixEvent, RoomEvent, RoomEventHandlerMap } from 'matrix-js-sdk';
+import { CryptoBackend } from 'matrix-js-sdk/lib/common-crypto/CryptoBackend';
 import { roomToUnreadAtom, unreadEqual, unreadInfoToUnread } from '../../state/room/roomToUnread';
 import LogoSVG from '../../../../public/res/svg/cinny.svg';
 import LogoUnreadSVG from '../../../../public/res/svg/cinny-unread.svg';
@@ -275,18 +276,26 @@ function MessageNotifications() {
       }
 
       if (showNotifications && notificationPermission('granted')) {
-        const avatarMxc =
-          room.getAvatarFallbackMember()?.getMxcAvatarUrl() ?? room.getMxcAvatarUrl();
-        notify({
-          roomName: room.name ?? 'Unknown',
-          roomAvatar: avatarMxc
-            ? mxcUrlToHttp(mx, avatarMxc, useAuthentication, 96, 96, 'crop') ?? undefined
-            : undefined,
-          username: getMemberDisplayName(room, sender) ?? getMxIdLocalPart(sender) ?? sender,
-          roomId: room.roomId,
-          eventId,
-          mEvent,
-        });
+        const doNotify = () => {
+          const avatarMxc =
+            room.getAvatarFallbackMember()?.getMxcAvatarUrl() ?? room.getMxcAvatarUrl();
+          notify({
+            roomName: room.name ?? 'Unknown',
+            roomAvatar: avatarMxc
+              ? mxcUrlToHttp(mx, avatarMxc, useAuthentication, 96, 96, 'crop') ?? undefined
+              : undefined,
+            username: getMemberDisplayName(room, sender) ?? getMxIdLocalPart(sender) ?? sender,
+            roomId: room.roomId,
+            eventId,
+            mEvent,
+          });
+        };
+
+        if (mEvent.isEncrypted() && mx.getCrypto()) {
+          mEvent.attemptDecryption(mx.getCrypto() as CryptoBackend).then(doNotify, doNotify);
+        } else {
+          doNotify();
+        }
       }
 
       if (notificationSound) {
