@@ -251,6 +251,20 @@ function MessageNotifications() {
     useAuthentication,
   ]);
 
+  // Register UnifiedPush for background notifications (Android/Tauri only)
+  useEffect(() => {
+    const registerPush = async () => {
+      if (typeof window !== 'undefined' && (window as any).__cinny_register_push && (window as any).__TAURI__) {
+        const accessToken = mx.getAccessToken();
+        const homeserverUrl = mx.getHomeserverUrl();
+        if (accessToken && homeserverUrl) {
+          await (window as any).__cinny_register_push(accessToken, homeserverUrl);
+        }
+      }
+    };
+    registerPush();
+  }, [mx]);
+
   return (
     // eslint-disable-next-line jsx-a11y/media-has-caption
     <audio ref={audioRef} style={{ display: 'none' }}>
